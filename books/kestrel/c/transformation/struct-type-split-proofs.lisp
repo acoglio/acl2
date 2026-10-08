@@ -1202,7 +1202,70 @@
                          c::expr-value->value$inline-of-expr-value-fix-x
                          mv-nth
                          iff
-                         (:e equal))))))
+                         (:e equal)))
+          (defruled stmt-return-value-congruence-under-compustate-equivp
+            (b* ((old (c::stmt-return old-expr))
+                 (new (c::stmt-return new-expr))
+                 ((mv old-expr-eval old-expr-compst)
+                  (c::exec-expr old-expr old-compst old-fenv (1- limit)))
+                 ((mv new-expr-eval new-expr-compst)
+                  (c::exec-expr new-expr new-compst new-fenv (1- limit)))
+                 (old-expr-val (c::expr-value->value old-expr-eval))
+                 (new-expr-val (c::expr-value->value new-expr-eval))
+                 ((mv old-sval old-compst1)
+                  (c::exec-stmt old old-compst old-fenv limit))
+                 ((mv new-sval new-compst1)
+                  (c::exec-stmt new new-compst new-fenv limit))
+                 (type (c::type-of-value old-expr-val)))
+              (implies (and old-expr
+                            new-expr
+                            (not (c::errorp old-sval))
+                            (not (c::errorp new-expr-eval))
+                            (iff old-expr-eval new-expr-eval)
+                            (equal old-expr-val new-expr-val)
+                            (compustate-equivp old-compst new-compst)
+                            (compustate-equivp old-expr-compst new-expr-compst)
+                            (c::type-nonchar-integerp type))
+                       (and (not (c::errorp new-sval))
+                            (equal old-sval new-sval)
+                            (compustate-equivp old-compst1 new-compst1)
+                            (equal (c::stmt-value-kind old-sval) :return)
+                            (c::stmt-value-return->value? old-sval)
+                            (set::in (c::type-option-of-stmt-value old-sval)
+                                     (set::insert type nil)))))
+            :expand ((c::exec-stmt (c::stmt-return old-expr)
+                                   old-compst old-fenv limit)
+                     (c::exec-stmt (c::stmt-return new-expr)
+                                   new-compst new-fenv limit))
+            :in-theory '(c::apconvert-expr-value-when-not-array
+                         c::value-kind-not-array-when-value-integerp
+                         c::type-option-of-stmt-value
+                         c::type-of-value-option
+                         c::value-option-some->val
+                         c::not-errorp-when-stmt-valuep
+                         c::not-errorp-when-expr-valuep
+                         c::exec-expr-expr-equiv-congruence-on-e
+                         c::expr-value->value$inline-expr-value-equiv-congruence-on-x
+                         c::type-option-of-stmt-value
+                         c::errorp-of-error
+                         c::expr-option-fix-under-expr-option-equiv
+                         c::expr-option-fix-under-iff
+                         c::expr-optionp-of-expr-option-fix
+                         c::expr-value-fix-under-expr-value-equiv
+                         c::expr-valuep-of-expr-value-fix
+                         c::exprp-when-expr-optionp
+                         set::in-insert
+                         c::return-type-of-stmt-return
+                         c::return-type-of-stmt-value-return
+                         c::stmt-fix-when-stmtp
+                         c::stmt-return->value-of-stmt-return
+                         c::stmt-value-return->value?-of-stmt-value-return
+                         c::type-nonchar-integerp-of-type-of-value
+                         c::value-fix-when-valuep
+                         c::value-option-fix-when-value-optionp
+                         c::value-optionp-when-valuep
+                         c::valuep-of-expr-value->value
+                         (:t c::expr-value->value))))))
     (retok events)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
