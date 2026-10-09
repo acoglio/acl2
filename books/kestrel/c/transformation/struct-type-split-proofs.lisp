@@ -1888,12 +1888,11 @@
               ((mv new-sval new-compst1)
                (c::exec-stmt new-stmt new-compst new-fenv limit)))
            (implies (and (compustate-equivp old-compst new-compst)
-                         (> (c::compustate-frames-number compst) 0)
+                         (> (c::compustate-frames-number old-compst) 0)
                          ,@vars-pre
                          (not (c::errorp old-sval)))
                     (and (not (c::errorp new-sval))
                          (equal old-sval new-sval)
-                         (equal old-compst new-compst)
                          (set::in (c::type-option-of-stmt-value old-sval)
                                   ',ctypes)
                          (compustate-equivp old-compst1 new-compst1)
@@ -2070,13 +2069,7 @@
   (xdoc::topstring
    (xdoc::p
     "This is similar to @(tsee xeq-expr-binary),
-     but for STS proof generation;
-     unlike that function,
-     it does not perform the transformation,
-     but it only generates proofs,
-     so it is given (the components of)
-     both the old and new expression as inputs,
-     which it sanity-checks."))
+     but for STS proof generation."))
   (b* (((reterr) (irr-gout))
        ((gin gin) gin)
        (gout-no-thm (gout-no-thm gin))
@@ -2180,9 +2173,7 @@
   (xdoc::topstring
    (xdoc::p
     "This does not perform the transformation; it only generates proofs.
-     So it takes as input both old and new expression.
-     This is very limited for now:
-     we only generate theorems for identifier expressions."))
+     So it takes as input both old and new expression."))
   (b* (((reterr) (irr-gout)))
     (expr-case
      old-expr
@@ -2276,6 +2267,111 @@
      :otherwise (retok (gout-no-thm gin))))
   :measure (expr-count old-expr)
   :verify-guards :after-returns)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(define stsp-stmt-return ((expr exprp)
+                          (expr-new exprp)
+                          (expr-thm-name symbolp)
+                          info
+                          (gin ginp))
+  :guard (and (expr-unambp expr)
+              (expr-unambp expr-new)
+              (expr-annop expr)
+              (expr-annop expr-new))
+  :returns (mv (erp maybe-msgp) (gout goutp))
+  :short "STS proof generation for a return statement with an expression."
+  :long
+  (xdoc::topstring
+   (xdoc::p
+    "This is similar to @(tsee xeq-stmt-return),
+     but for STS proof generation."))
+  (b* (((reterr) (irr-gout))
+       ((gin gin) gin)
+       (gout-no-thm (gout-no-thm gin))
+       ((mv & old-expr) (ldm-expr expr)) ; ERP must be NIL
+       ((mv & new-expr) (ldm-expr expr-new)) ; ERP must be NIL
+       (expr-thm-name (symbol-lfix expr-thm-name))
+       ((unless expr-thm-name) (retok gout-no-thm))
+       (hints `(("Goal"
+                 :in-theory '((:e set::insert)
+                              (:e c::stmt-return)
+                              (:e c::type-nonchar-integerp)
+                              stmt-compustate-vars)
+                 :use ((:instance ,expr-thm-name
+                                  (limit (1- limit)))
+                       (:instance
+                        stmt-return-value-congruence-under-compustate-equivp
+                        (old-expr ',old-expr)
+                        (new-expr ',new-expr))
+                       (:instance stmt-return-errors
+                                  (expr ',old-expr)
+                                  (compst old-compst)
+                                  (fenv old-fenv))))))
+       ((mv thm-event thm-name thm-index)
+        (stsp-gen-stmt-thm (stmt-return (expr-fix expr) info)
+                           (stmt-return (expr-fix expr-new) info)
+                           gin.vartys
+                           gin.const-new
+                           gin.thm-index
+                           hints)))
+    (retok (make-gout :events (cons thm-event gin.events)
+                      :thm-index thm-index
+                      :thm-name thm-name
+                      :vartys gin.vartys))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(define stsp-stmt ((old-stmt stmtp)
+                   (new-stmt stmtp)
+                   (old-name identp)
+                   (newl-name identp)
+                   (newr-name identp)
+                   (gin ginp))
+  :guard (and (stmt-unambp old-stmt)
+              (stmt-unambp new-stmt)
+              (stmt-annop old-stmt)
+              (stmt-annop new-stmt))
+  :returns (mv (erp maybe-msgp) (gout goutp))
+  :short "STS proof generation for a statement."
+  :long
+  (xdoc::topstring
+   (xdoc::p
+    "This does not perform the transformation; it only generates proofs.
+     So it takes as input both old and new expression."))
+  (b* (((reterr) (irr-gout)))
+    (stmt-case
+     old-stmt
+     :return
+     (stmt-case
+      new-stmt
+      :return (b* (((unless (iff old-stmt.expr? new-stmt.expr?))
+                    (retmsg$ "The statments ~x0 and ~x1 do not match. ~
+                              This suggests that STRUCT-TYPE-SPLIT-PROOFS ~
+                              was not called on ~
+                              the old and new code of STRUCT-TYPE-SPLIT."
+                             (stmt-fix old-stmt) (stmt-fix new-stmt)))
+                   ((unless old-stmt.expr?)
+                    (retok (gout-no-thm gin)))
+                   ((erp gout) (stsp-expr old-stmt.expr?
+                                          new-stmt.expr?
+                                          old-name
+                                          newl-name
+                                          newr-name
+                                          gin))
+                   (expr-thm (gout->thm-name gout))
+                   (gin (gin-update gin gout)))
+                (stsp-stmt-return old-stmt.expr?
+                                  new-stmt.expr?
+                                  expr-thm
+                                  old-stmt.info
+                                  gin))
+      :otherwise (retmsg$ "The statments ~x0 and ~x1 do not match. ~
+                           This suggests that STRUCT-TYPE-SPLIT-PROOFS ~
+                           was not called on ~
+                           the old and new code of STRUCT-TYPE-SPLIT."
+                          (stmt-fix old-stmt) (stmt-fix new-stmt)))
+     :otherwise (retok (gout-no-thm gin)))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -2413,20 +2509,8 @@
         (retmsg$ "Unsupported proof generation for ~
                   function bodies whose block item is not a statement."))
        (old-stmt (block-item-stmt->stmt old-item))
-       (new-stmt (block-item-stmt->stmt new-item))
-       ((unless (and (stmt-case old-stmt :return)
-                     (stmt-case new-stmt :return)))
-        (retmsg$ "Unsupported proof generation for ~
-                  function bodies whose statement is not a retun."))
-       (old-expr? (stmt-return->expr? old-stmt))
-       (new-expr? (stmt-return->expr? new-stmt))
-       ((unless (and old-expr?
-                     new-expr?))
-        (retmsg$ "Unsupported proof generation for ~
-                  function bodies whose return statement has no expression."))
-       (old-expr old-expr?)
-       (new-expr new-expr?))
-    (stsp-expr old-expr new-expr old-name newl-name newr-name gin)))
+       (new-stmt (block-item-stmt->stmt new-item)))
+    (stsp-stmt old-stmt new-stmt old-name newl-name newr-name gin)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
